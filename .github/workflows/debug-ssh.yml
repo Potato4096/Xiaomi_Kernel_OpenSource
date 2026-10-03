@@ -1,17 +1,46 @@
 name: Debug SSH
 
 on:
+  # 手动触发，最安全，不污染 CI
   workflow_dispatch:
+    inputs:
+      timeout:
+        description: 'SSH 会话保持分钟数'
+        required: false
+        default: '30'
 
 jobs:
   debug:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # 1. 拉代码（不需要也行，方便你直接调试仓库内容）
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Start SSH session
+      # 2. 环境预检：确认能出网、能看到 runner 基础信息
+      - name: Preflight check
+        run: |
+          echo "== Runner info =="
+          uname -a
+          whoami
+          pwd
+          echo "== Network check =="
+          curl -sS --max-time 15 -o /dev/null -w "github.com  -> %{http_code}\n" https://github.com
+          curl -sS --max-time 15 -o /dev/null -w "tmate.io    -> %{http_code}\n" https://tmate.io
+
+      # 3. 确保 ssh 客户端和 xz 就绪（tmate 依赖）
+      - name: Prepare deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y openssh-client xz-utils
+
+      # 4. 启动 tmate SSH 会话
+      - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 60
+        timeout-minutes: ${{ fromJSON(github.event.inputs.timeout) || 30 }}
         with:
+          # 只允许触发本次 workflow 的 GitHub 用户连接，强烈推荐
           limit-access-to-actor: true
+          # 有些 runner 没 sudo，可关掉
+          sudo: false
